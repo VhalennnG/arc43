@@ -1,0 +1,12 @@
+# Ruff configuration
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = []
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "native"

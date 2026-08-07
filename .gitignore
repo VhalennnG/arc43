@@ -1,0 +1,58 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# UV
+.uv-cache/
+
+# Models (large files)
+models/
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Data (runtime extracted results & logs)
+data/knowledge/
+data/process_audit.log
+data/temp_uploads/
+data/data/
+
+# Pytest
+.pytest_cache/
+
+# Temp files
+.tmp/
+*.tmp
+*.log
+docs
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,37 @@
+[project]
+name = "arc43"
+version = "0.1.0"
+description = "AI-Powered Form Auto-Fill — 100% On-Device"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "jinja2>=3.1.3",
+    "python-multipart>=0.0.9",
+    "llama-cpp-python>=0.2.56",
+    "pyobjc-core>=10.1",
+    "pyobjc-framework-Vision>=10.1",
+    "pyobjc-framework-Quartz>=10.1",
+    "pypdf>=4.1.0",
+    "python-docx>=1.1.0",
+    "openpyxl>=3.1.2",
+    "beautifulsoup4>=4.12.3",
+    "reportlab>=4.1.0",
+    "huggingface-hub>=0.21.4",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+

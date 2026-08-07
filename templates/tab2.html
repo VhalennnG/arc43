@@ -1,0 +1,127 @@
+<div id="tab2-view">
+    <!-- If output file is generated, show download panel first -->
+    {% if output_file %}
+        <div class="panel" style="border-left: 4px solid var(--success); background: rgba(16, 185, 129, 0.08); margin-bottom: 2rem;">
+            <h2 style="color: var(--success); margin-top: 0;">🎉 Form Berhasil Diisi!</h2>
+            <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 1.5rem;">
+                Form target Anda telah selesai diproses dan diisi oleh AI secara lokal. Layout dan format berkas tetap dipertahankan.
+            </p>
+            <div style="display: flex; gap: 1rem;">
+                <a href="/download-file/{{ output_file }}" class="btn btn-primary" style="text-decoration: none;">
+                    📥 Unduh Berkas Hasil Isian
+                </a>
+                <a href="/tab2" class="btn" style="border: 1px solid var(--border-color); color: var(--text-primary); text-decoration: none;" hx-get="/tab2" hx-target="#tab2-view" hx-swap="outerHTML">
+                    Isi Form Baru
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Step 1 & 2: Checklist + Upload Target Form (Only show if not already generated, or if starting new) -->
+    {% if not output_file and not fields %}
+        <div class="panel">
+            <h2>1. Pilih Dokumen Sumber (Knowledge Base)</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1.5rem;">
+                Pilih satu atau lebih dokumen dari list di bawah ini untuk dijadikan referensi pencarian data oleh AI.
+            </p>
+
+            {% if records|length == 0 %}
+                <div class="alert-box" style="border-left-color: var(--danger); background: rgba(239, 68, 68, 0.08); color: var(--text-primary);">
+                    ⚠️ <strong>Knowledge Base Kosong:</strong> Silakan buka <strong>Tab 1</strong> untuk mengunggah dokumen referensi (KTP, KK, dll) terlebih dahulu.
+                </div>
+            {% else %}
+                <form id="fill-form-request" hx-encoding="multipart/form-data" hx-post="/process-form" 
+                      hx-target="#tab2-view" hx-swap="outerHTML" hx-indicator="#fill-indicator">
+                    
+                    <div class="checklist-grid">
+                        {% for rec in records %}
+                            <label class="checklist-card">
+                                <input type="checkbox" name="selected_sources" value="{{ rec.id }}">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-primary);">
+                                        {{ rec.original_filename }}
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                        {{ rec.source_type|upper }} &bull; {{ rec.uploaded_at[:10] }}
+                                    </div>
+                                </div>
+                            </label>
+                        {% endfor %}
+                    </div>
+
+                    <h2>2. Unggah Form Target</h2>
+                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1.5rem;">
+                        Unggah file template form kosong yang ingin Anda isi.
+                    </p>
+
+                    <div class="upload-zone" onclick="document.getElementById('form-file-input').click()">
+                        <div class="upload-icon">📝</div>
+                        <div class="upload-text" id="upload-status-text">Klik untuk memilih file form target</div>
+                        <div class="upload-meta">PDF (AcroForm), DOCX, XLSX, HTML (Maks. 10MB)</div>
+                        <input id="form-file-input" type="file" name="form_file" style="display: none;" 
+                               onchange="document.getElementById('upload-status-text').innerText = 'Berkas terpilih: ' + this.files[0].name; document.getElementById('process-submit-btn').style.display = 'inline-flex';">
+                    </div>
+
+                    <div style="margin-top: 2rem; display: flex; justify-content: flex-end; align-items: center; gap: 1.5rem;">
+                        <div id="fill-indicator" class="htmx-indicator" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;">
+                            ⏳ Sedang mendeteksi field & mencocokkan data dengan AI...
+                        </div>
+                        <button id="process-submit-btn" class="btn btn-primary" type="submit" style="display: none;">
+                            Mulai Deteksi & Auto-Fill
+                        </button>
+                    </div>
+                </form>
+            {% endif %}
+        </div>
+    {% endif %}
+
+    <!-- Step 3: Review & Edit fields (Only show if fields are processed but output not yet generated) -->
+    {% if fields and not output_file %}
+        <div class="panel">
+            <h2>3. Review & Edit Nilai Field</h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1.5rem;">
+                AI telah mengisi form berdasarkan dokumen referensi yang Anda pilih. Silakan periksa, edit jika ada kesalahan, lalu tekan tombol Generate.
+            </p>
+
+            <form hx-post="/generate-output" hx-target="#tab2-view" hx-swap="outerHTML" hx-indicator="#generate-indicator">
+                <!-- Keep references of form & sources -->
+                <input type="hidden" name="form_filename" value="{{ form_filename }}">
+                {% for src in selected_sources %}
+                    <input type="hidden" name="selected_sources" value="{{ src }}">
+                {% endfor %}
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 40%;">Field / Label</th>
+                            <th style="width: 60%;">Nilai Terdeteksi (AI-Filled)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for field in fields %}
+                            <tr>
+                                <td>
+                                    <label style="font-weight: 600; color: var(--text-primary);" for="field-{{ field.id }}">
+                                        {{ field.label }}
+                                    </label>
+                                </td>
+                                <td>
+                                    <input type="text" id="field-{{ field.id }}" name="field_{{ field.id }}" value="{{ field.value }}">
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 2rem; display: flex; justify-content: flex-end; align-items: center; gap: 1.5rem;">
+                    <div id="generate-indicator" class="htmx-indicator" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;">
+                        ⏳ Sedang menulis data ke berkas asli...
+                    </div>
+                    <button class="btn btn-primary" type="submit">
+                        Generate & Simpan Form
+                    </button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
+</div>
