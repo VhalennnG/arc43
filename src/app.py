@@ -30,29 +30,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-def _try_repair_json(raw: str):
-    """
-    Attempt to repair truncated JSON array output from LLM.
-    Returns the parsed list on success, or None if repair is not possible.
-    """
-    # Only attempt repair on arrays
-    if not raw.startswith("["):
-        return None
-    
-    # Strategy: find the last complete object "}" and close the array
-    last_brace = raw.rfind("}")
-    if last_brace == -1:
-        return None
-    
-    candidate = raw[:last_brace + 1].rstrip().rstrip(",") + "\n]"
-    try:
-        parsed = json.loads(candidate)
-        if isinstance(parsed, list):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-    return None
-
 @app.get("/")
 async def root():
     """Redirect to Tab 1 by default."""
@@ -107,89 +84,59 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
             "raw_text": raw_text
         })
             
-        fields = []
-        # If GGUF LLM model is available, structure raw text into fields
+        # Classify document category using LLM (one sentence)
+        category = ""
         if raw_text.strip() and os.path.exists(llm.LLM_PATH):
             prompt = (
-                "You are a data extraction assistant. Extract individual key-value pairs from the raw text below.\n\n"
-                "RULES:\n"
-                "1. Each piece of information MUST be its own separate object.\n"
-                "2. Use SHORT, specific labels. Do NOT combine multiple items into one value.\n"
-                "3. Extract values VERBATIM from the text. Do not summarize, translate, or guess.\n"
-                "4. If no clear label-value patterns are found, return an empty JSON array [].\n"
-                "5. Output ONLY a valid JSON array — no markdown, no explanations, no extra text.\n\n"
-                "EXAMPLE of correct output:\n"
-                "[\n"
-                '  {"label": "Name", "value": "John Doe"},\n'
-                '  {"label": "Email", "value": "john@example.com"},\n'
-                '  {"label": "Phone", "value": "+62 812-3456-7890"},\n'
-                '  {"label": "Position", "value": "Software Engineer"},\n'
-                '  {"label": "Company", "value": "PT Example"},\n'
-                '  {"label": "Period", "value": "01/2023 - 12/2023"},\n'
-                '  {"label": "Education", "value": "Informatics, Universitas Example"},\n'
-                '  {"label": "GPA", "value": "3.84 / 4.0"}\n'
-                "]\n\n"
-                f"Raw Text:\n---\n{raw_text}\n---\n\n"
-                "JSON Output:"
+                "Kamu bertugas membuat SATU kalimat singkat yang mendeskripsikan JENIS/KATEGORI dari dokumen berikut. "
+                "Deskripsi ini akan dipakai sebagai clue konteks oleh sistem lain nantinya, BUKAN untuk meringkas isinya.\n\n"
+                "ATURAN KETAT:\n"
+                "1. Jawab HANYA dengan satu kalimat deskripsi kategori — tidak lebih, tidak ada penjelasan tambahan.\n"
+                "2. JANGAN meringkas isi dokumen atau menyebutkan data spesifik di dalamnya "
+                "(nama orang, tanggal, angka, alamat, dll). Cukup JENIS dokumennya secara umum.\n"
+                "3. JANGAN pakai tanda kutip, markdown, atau format tambahan apapun. Teks polos saja.\n"
+                "4. Gunakan Bahasa Indonesia, meskipun isi dokumennya berbahasa lain.\n"
+                "5. Kalau dokumennya berisi campuran beberapa jenis informasi, sebutkan semuanya secara singkat.\n\n"
+                "Contoh jawaban yang benar:\n"
+                "- Data pribadi berupa KTP (Kartu Tanda Penduduk)\n"
+                "- Data riwayat pekerjaan, pendidikan, dan pencapaian profesional (CV/Resume)\n"
+                "- Data NPWP (Nomor Pokok Wajib Pajak) perusahaan\n"
+                "- Daftar menu makanan dan harga\n"
+                "- Data akta kelahiran\n\n"
+                f"DOKUMEN:\n---\n{raw_text}\n---\n\n"
+                "Kategori dokumen ini:"
             )
-            db.log_process(file.filename, "LLM_EXTRACTION_PROMPT", {"prompt": prompt})
+            db.log_process(file.filename, "LLM_CATEGORY_PROMPT", {"prompt": prompt})
             
-            llm_output = ""
             try:
-                llm_output = llm.generate_text(prompt)
-                llm_output = llm_output.strip()
-                # Clean any markdown block wrappers if generated
-                if llm_output.startswith("```json"):
-                    llm_output = llm_output[7:]
-                elif llm_output.startswith("```"):
-                    llm_output = llm_output[3:]
-                if llm_output.endswith("```"):
-                    llm_output = llm_output[:-3]
-                llm_output = llm_output.strip()
-                
-                # Strategy D: Attempt JSON repair if parsing fails
-                try:
-                    extracted = json.loads(llm_output)
-                except json.JSONDecodeError:
-                    repaired = _try_repair_json(llm_output)
-                    if repaired is not None:
-                        extracted = repaired
-                        db.log_process(file.filename, "JSON_REPAIR_SUCCESS", {
-                            "original_output": llm_output,
-                            "repaired_result_count": len(extracted) if isinstance(extracted, list) else 0
-                        })
-                    else:
-                        raise
-                
-                if isinstance(extracted, list):
-                    for item in extracted:
-                        if isinstance(item, dict) and "label" in item and "value" in item:
-                            fields.append({
-                                "label": str(item["label"]),
-                                "value": str(item["value"])
-                            })
-                db.log_process(file.filename, "LLM_EXTRACTION_SUCCESS", {
+                llm_output = llm.generate_text(prompt, max_tokens=128)
+                category = llm_output.strip()
+                # Clean up: take only the first line (in case model outputs more)
+                category = category.split("\n")[0].strip()
+                # Remove leading dash/bullet if present
+                if category.startswith("- "):
+                    category = category[2:]
+                db.log_process(file.filename, "LLM_CATEGORY_SUCCESS", {
                     "raw_output": llm_output,
-                    "extracted_fields": fields
+                    "category": category
                 })
             except Exception as e:
-                print(f"Error parsing LLM extraction output: {e}")
-                db.log_process(file.filename, "LLM_EXTRACTION_FAILED", {
-                    "raw_output": llm_output,
+                print(f"Error classifying document: {e}")
+                db.log_process(file.filename, "LLM_CATEGORY_FAILED", {
                     "error": str(e)
                 })
                 
-        # Save record
+        # Save record as .txt (category + raw_text)
         saved_rec = db.save_record(
             filename=file.filename,
             source_type=source_type,
             extraction_method=extraction_method,
             raw_text=raw_text,
-            fields=fields
+            category=category
         )
         db.log_process(file.filename, "RECORD_SAVED", {
             "record_id": saved_rec["id"],
-            "saved_fields_count": len(fields)
+            "category": category
         })
     finally:
         if os.path.exists(file_path):
@@ -242,17 +189,14 @@ async def process_form(
             field_label = field["label"]
             matched_value = ""
             
-            # Layer 1: Look up exact label match in pre-structured fields
-            for rec in records:
-                for f in rec.get("fields", []):
-                    if f.get("label", "").strip().lower() == field_label.strip().lower():
-                        matched_value = f.get("value", "")
-                        
-            # Layer 2: Fallback to searching verbatim raw_text using LLM
-            if not matched_value and os.path.exists(llm.LLM_PATH):
+            # Match field value using LLM with category-prefixed source context
+            if os.path.exists(llm.LLM_PATH):
                 context_texts = []
                 for rec in records:
-                    context_texts.append(f"Source file: {rec['original_filename']}\n{rec['raw_text']}")
+                    category_line = rec.get("category", "")
+                    raw = rec.get("raw_text", "")
+                    header = f"[{category_line}] " if category_line else ""
+                    context_texts.append(f"{header}Source: {rec.get('original_filename', '')}\n{raw}")
                 context_str = "\n\n".join(context_texts)
                 
                 if context_str.strip():
@@ -267,7 +211,7 @@ async def process_form(
                         f"Value for '{field_label}':"
                     )
                     try:
-                        llm_val = llm.generate_text(prompt, max_tokens=128, temperature=0.1).strip()
+                        llm_val = llm.generate_text(prompt, max_tokens=128).strip()
                         if llm_val.upper() != "EMPTY":
                             matched_value = llm_val
                     except Exception as e:

@@ -54,62 +54,74 @@ def save_record(
     source_type: str,
     extraction_method: str,
     raw_text: str,
-    fields: List[Dict[str, str]]
+    category: str = ""
 ) -> Dict[str, Any]:
     """
-    Creates and saves a new document record.
+    Creates and saves a new document record as a .txt file.
+    Line 1: category, Line 2: blank, Line 3+: raw_text.
     """
     init_db()
     record_id = generate_record_id(filename)
     uploaded_at = datetime.now().isoformat()
     
-    record = {
+    # Save as .txt: category \n\n raw_text
+    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.txt")
+    with open(record_path, "w", encoding="utf-8") as f:
+        f.write(category + "\n\n" + raw_text)
+        
+    # Update index with lightweight metadata
+    index = load_index()
+    index_entry = {
         "id": record_id,
         "original_filename": filename,
         "uploaded_at": uploaded_at,
         "source_type": source_type,
         "extraction_method": extraction_method,
-        "raw_text": raw_text,
-        "fields": fields
+        "category": category
     }
-    
-    # Save individual record file
-    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.json")
-    with open(record_path, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=2)
-        
-    # Update index
-    index = load_index()
-    index.append({
-        "id": record_id,
-        "original_filename": filename,
-        "uploaded_at": uploaded_at,
-        "source_type": source_type
-    })
+    index.append(index_entry)
     save_index(index)
     
-    return record
+    return index_entry
 
 def get_record(record_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieves a single record by its ID.
+    Reads the .txt file and parses line 1 as category, rest as raw_text.
+    Also merges metadata from index.json.
     """
-    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.json")
+    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.txt")
     if not os.path.exists(record_path):
         return None
     try:
         with open(record_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            content = f.read()
+        
+        # Split: first line = category, rest (after blank line) = raw_text
+        parts = content.split("\n\n", 1)
+        category = parts[0].strip() if len(parts) > 0 else ""
+        raw_text = parts[1] if len(parts) > 1 else ""
+        
+        # Merge with index metadata
+        index = load_index()
+        meta = next((e for e in index if e["id"] == record_id), {})
+        
+        return {
+            **meta,
+            "id": record_id,
+            "category": category,
+            "raw_text": raw_text
+        }
     except Exception as e:
         print(f"Error loading record {record_id}: {e}")
         return None
 
 def delete_record(record_id: str) -> bool:
     """
-    Deletes a record and its index entry.
+    Deletes a record (.txt file) and its index entry.
     """
     # Delete individual record file
-    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.json")
+    record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.txt")
     deleted = False
     if os.path.exists(record_path):
         try:
@@ -153,4 +165,5 @@ def log_process(filename: str, event: str, details: Any):
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"Failed to write process audit log: {e}")
+
 
