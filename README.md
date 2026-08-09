@@ -1,59 +1,59 @@
 # arc43 — AI-Powered Form Auto-Fill
 
-Project **arc43** adalah aplikasi web lokal berbasis desktop macOS yang berfungsi untuk mendeteksi kolom isian pada formulir target (template) dan mengisinya secara otomatis menggunakan data dari basis pengetahuan (Knowledge Base) dokumen pengguna. Seluruh proses pengolahan berkas, OCR, ekstraksi teks, klasifikasi, dan inferensi LLM dilakukan **100% secara lokal (on-device)** tanpa ada pengiriman data ke cloud/internet pihak ketiga.
+Project **arc43** is a local macOS desktop-based web application that detects fillable fields on a target template form and automatically fills them using data from the user's document Knowledge Base. The entire process of file processing, OCR, text extraction, classification, and LLM inference is performed **100% locally (on-device)** without sending any data to third-party cloud services or the internet.
 
 ---
 
-## 🏗️ Arsitektur Sistem & Alur Kerja
+## 🏗️ System Architecture & Workflow
 
-Aplikasi terbagi menjadi dua tab antarmuka utama (Tab 1 dan Tab 2):
+The application is split into two main user interface tabs (Tab 1 and Tab 2):
 
 ### 1. Tab 1: Knowledge Base (Ingest Pipeline)
 
-Ketika pengguna mengunggah berkas dokumen (Resume, KTP, NPWP, dll.) sebagai sumber informasi:
+When a user uploads a source document (Resume, ID card, tax document, etc.) as an information source:
 
-1. **Unggah Sementara**: Berkas disimpan di `data/temp_uploads/`.
-2. **Ekstraksi Teks Mentah (Raw Text Extraction)**:
-   - **Berkas Gambar (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`)**: Diproses menggunakan **macOS Vision Framework** native (`ocr.recognize_text`) melalui API PyObjC dengan tingkat akurasi tinggi (`recognitionLevel = 0` / Accurate).
-   - **Berkas PDF (`.pdf`)**: Teks digital diekstrak menggunakan parser `pypdf`. Jika hasil pembacaan digital mengembalikan teks kosong `""` (mengindikasikan dokumen hasil scan/gambar), sistem mengaktifkan **fallback OCR native** (`ocr.recognize_pdf_text_via_ocr`) yang merender halaman PDF secara on-memory menggunakan `Quartz.PDFDocument` ke format `NSImage` dan melakukan OCR menggunakan Vision API.
-   - **Berkas Word (`.docx`)**: Teks paragraf dan tabel diekstrak secara terprogram menggunakan `python-docx` (dengan deduplikasi otomatis untuk sel yang di-merge).
-   - **Berkas Excel (`.xlsx`)**: Baris data dan nilai sel diekstrak secara terprogram dari setiap lembar kerja menggunakan `openpyxl` (`data_only=True`).
-3. **Klasifikasi Kategori oleh LLM**:
-   Teks mentah yang berhasil diekstrak dikirim ke LLM lokal (**Apertus-SEA-LION-v4-8B-IT** berbasis Qwen2.5) dengan prompt Bahasa Indonesia untuk menghasilkan **satu kalimat singkat deskripsi kategori/jenis dokumen** (contoh: _\"Data pribadi berupa KTP (Kartu Tanda Penduduk)\"_).
-4. **Penyimpanan Permanen**:
-   - Data disimpan sebagai file teks biasa `.txt` di `data/knowledge/` dengan format: Baris 1 berisi kategori, Baris 2 kosong, Baris 3+ berisi teks mentah asli.
-   - Metadata dokumen (ID unik dengan timestamp, nama file asli, tanggal unggah, tipe sumber, metode ekstraksi, dan kategori) dicatat ke dalam [data/knowledge/index.json](data/knowledge/index.json) untuk listing UI.
-   - Berkas sementara di `data/temp_uploads/` dihapus.
+1. **Temporary Upload**: The file is saved in `data/temp_uploads/`.
+2. **Raw Text Extraction**:
+   - **Image Files (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`)**: Processed using the native **macOS Vision Framework** (`ocr.recognize_text`) via the PyObjC API with high accuracy (`recognitionLevel = 0` / Accurate).
+   - **PDF Files (`.pdf`)**: Digital text is extracted using the `pypdf` parser. If the digital reading returns empty text `""` (indicating a scanned document or image PDF), the system triggers the **native fallback OCR** (`ocr.recognize_pdf_text_via_ocr`) which renders PDF pages in-memory using `Quartz.PDFDocument` to `NSImage` format and performs OCR using the Vision API.
+   - **Word Files (`.docx`)**: Paragraph and table text is programmatically extracted using `python-docx` (with automatic deduplication for merged cells).
+   - **Excel Files (`.xlsx`)**: Data rows and cell values are programmatically extracted from each worksheet using `openpyxl` (`data_only=True`).
+3. **Category Classification by LLM**:
+   The extracted raw text is sent to the local LLM (**Apertus-SEA-LION-v4-8B-IT** based on Qwen2.5) with a prompt to generate a **single-sentence description of the document category/type** (e.g., _"Personal data containing ID Card (Kartu Tanda Penduduk)"_).
+4. **Permanent Storage**:
+   - Data is stored as a plain text file `.txt` in `data/knowledge/` formatted as: Line 1 contains the category, Line 2 is empty, and Line 3+ contains the original raw text.
+   - Document metadata (unique ID with timestamp, original filename, upload date, source type, extraction method, and category) is written to [data/knowledge/index.json](data/knowledge/index.json) for UI listing.
+   - The temporary file in `data/temp_uploads/` is deleted.
 
-### 2. Tab 2: Isi Form (Auto-Fill Pipeline)
+### 2. Tab 2: Fill Form (Auto-Fill Pipeline)
 
-Alur pengisian formulir otomatis terdiri dari langkah berikut:
+The automated form-filling pipeline consists of the following steps:
 
-1. **Pemilihan Sumber**: Pengguna memilih satu atau beberapa dokumen dari Knowledge Base yang akan dijadikan sumber konteks data.
-2. **Unggah Formulir Target**: Pengguna mengunggah berkas formulir kosong yang ingin diisi. Berkas disimpan sementara di `data/temp_uploads/`.
-3. **Deteksi Kolom (Field Detection)**:
-   - Kolom isian dideteksi menggunakan modul `fillers.detect_fields()`. _(Catatan: Pada fase baseline saat ini, deteksi kolom masih berupa **mock implementation** yang mengembalikan tiga kolom contoh: Nama Lengkap, NIK, dan Alamat)_.
-4. **Pencarian Jawaban (Contextual LLM Match)**:
-   - Program menggabungkan teks mentah dari seluruh dokumen sumber yang dipilih, lengkap dengan prefiks kategori/jenis dokumen masing-masing sebagai petunjuk konteks untuk LLM.
-   - Untuk setiap kolom yang terdeteksi, sistem mengirimkan prompt ke LLM lokal untuk mengekstrak nilai kolom secara verbatim dari dokumen sumber. Jika data tidak ditemukan, LLM diarahkan mengembalikan `EMPTY`.
-   - Hasil temuan LLM ditampilkan ke tabel UI agar pengguna dapat mereview dan mengeditnya secara manual jika diperlukan.
-5. **Penulisan Formulir (Form Filling & Output)**:
-   - Setelah direview, nilai form dikirim ke `fillers.fill_form()`. _(Catatan: Pada fase baseline saat ini, penulisan form masih menulis berkas teks mock sederhana berisi pasangan key-value)_.
-   - File hasil pengisian disimpan di `data/outputs/filled_<nama_file>` dan berkas temporary di `data/temp_uploads/` dihapus.
-   - Pengguna dapat mengunduh berkas hasil akhir melalui UI.
+1. **Source Selection**: The user selects one or more documents from the Knowledge Base to be used as the context source.
+2. **Target Form Upload**: The user uploads the blank form template they want to fill. The file is temporarily saved in `data/temp_uploads/`.
+3. **Field Detection**:
+   - Form fields are detected using the `fillers.detect_fields()` module. _(Note: In this baseline phase, field detection is a **mock implementation** returning three sample fields: Full Name, National ID Number (NIK), and Address)_.
+4. **Contextual LLM Match**:
+   - The program combines the raw text of all selected source documents, prefixing each with its document category/type as a context clue for the LLM.
+   - For each detected field, the system sends a prompt to the local LLM to extract the field value verbatim from the source documents. If the data is not found, the LLM is directed to return `EMPTY`.
+   - The LLM outputs are displayed in a UI table so that the user can manually review and edit them if needed.
+5. **Form Writing (Form Filling & Output)**:
+   - After review, the form values are sent to `fillers.fill_form()`. _(Note: In this baseline phase, form writing still outputs a simple mock text file containing key-value pairs)_.
+   - The filled file is saved as `data/outputs/filled_<filename>` and the temporary file in `data/temp_uploads/` is deleted.
+   - The user can download the final output file through the UI.
 
 ---
 
-## 📊 Diagram Alur Pemrosesan
+## 📊 Processing Flow Diagrams
 
-### 1. Diagram Sekuensial (Sequence Diagram — Alur Ingestion Tab 1)
+### 1. Sequence Diagram (Ingestion Flow - Tab 1)
 
-Diagram di bawah ini menggambarkan komunikasi asinkronus dan pertukaran data maju-mundur antara komponen sistem saat pengguna mengunggah dokumen baru:
+The diagram below illustrates the asynchronous communication and back-and-forth data exchange between system components when a user uploads a new document:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Pengguna
+    actor User as User
     participant UI as Browser UI (HTMX)
     participant App as FastAPI Server (app.py)
     participant Pars as Document Parsers (parsers.py)
@@ -61,168 +61,168 @@ sequenceDiagram
     participant LLM as Sequential LLM (llm.py)
     participant DB as Local Database (db.py)
 
-    User->>UI: Unggah Berkas Sumber (PDF/Gambar/Word/Excel)
-    UI->>App: HTTP POST /upload-doc (File Multipart)
-    Note over App: Simpan sementara di temp_uploads/
+    User->>UI: Upload Source File (PDF/Image/Word/Excel)
+    UI->>App: HTTP POST /upload-doc (Multipart File)
+    Note over App: Save temporarily in temp_uploads/
 
     App->>Pars: parse_document(file_path)
 
-    alt Jika PDF memiliki layer teks digital
-        Pars->>Pars: Ekstraksi via pypdf
-    else Jika PDF kosong (Hasil Scan) atau Gambar
+    alt If PDF has digital text layer
+        Pars->>Pars: Extract via pypdf
+    else If PDF is empty (Scan) or Image
         Pars->>OCR: recognize_pdf_text_via_ocr() / recognize_text()
-        Note over OCR: Render PDFPage ke NSImage (Quartz)
-        OCR->>OCR: Ekstraksi teks via Apple Vision OCR API
-        OCR-->>Pars: Kembalikan raw_text verbatim
+        Note over OCR: Render PDFPage to NSImage (Quartz)
+        OCR->>OCR: Extract text via Apple Vision OCR API
+        OCR-->>Pars: Return verbatim raw_text
     end
 
-    Pars-->>App: Kembalikan raw_text & extraction_method
+    Pars-->>App: Return raw_text & extraction_method
 
-    App->>LLM: generate_text(prompt_klasifikasi)
-    Note over LLM: Load model Apertus GGUF ke RAM
-    LLM->>LLM: Klasifikasikan kategori dokumen (1 kalimat)
-    Note over LLM: Unload model dari RAM (Bebaskan Memori)
-    LLM-->>App: Kembalikan teks kategori
+    App->>LLM: generate_text(classification_prompt)
+    Note over LLM: Load Apertus GGUF model into RAM
+    LLM->>LLM: Classify document category (1 sentence)
+    Note over LLM: Unload model from RAM (Free Memory)
+    LLM-->>App: Return category text
 
     App->>DB: save_record(filename, category, raw_text)
-    Note over DB: Tulis berkas .txt di data/knowledge/<br/>Update index.json
-    DB-->>App: Kembalikan meta record
+    Note over DB: Write .txt file in data/knowledge/<br/>Update index.json
+    DB-->>App: Return meta record
 
-    Note over App: Hapus file di temp_uploads/
-    App->>UI: Kembalikan template HTML Tab 1 ter-render
-    UI->>User: Perbarui UI Daftar Dokumen
+    Note over App: Delete file in temp_uploads/
+    App->>UI: Return rendered Tab 1 HTML template
+    UI->>User: Update Document List UI
 ```
 
 ---
 
-### 2. Diagram Aliran Blok (Top-to-Bottom Flowchart — Auto-Fill Pipeline)
+### 2. Block Flow Diagram (Top-to-Bottom Flowchart — Auto-Fill Pipeline)
 
-Diagram di bawah menunjukkan alur data dari atas ke bawah untuk pemrosesan menyeluruh, dirancang menggunakan blok modern mengambang (efek bayangan 3D) dan silinder penyimpanan:
+The diagram below shows the top-to-bottom data flow for the end-to-end processing:
 
 ```mermaid
 flowchart TD
     %% Node Definitions
-    A[📄 Unggah Dokumen Sumber <br/> PDF / Gambar / DOCX / XLSX] --> B{🔍 Ekstraksi Teks Mentah}
+    A[📄 Upload Source Documents <br/> PDF / Image / DOCX / XLSX] --> B{🔍 Raw Text Extraction}
 
     %% Format Router Decisions
-    B -->|Parser Digital| C[⚙️ Parser Programmatic <br/> pypdf / python-docx / openpyxl]
-    B -->|Gambar atau PDF Kosong| D[👁️ macOS Vision OCR <br/> Native Apple OCR Engine]
+    B -->|Digital Parser| C[⚙️ Programmatic Parser <br/> pypdf / python-docx / openpyxl]
+    B -->|Image or Scanned PDF| D[👁️ macOS Vision OCR <br/> Native Apple OCR Engine]
 
-    C --> E[📝 Teks Mentah Hasil Ekstraksi]
+    C --> E[📝 Extracted Raw Text]
     D --> E
 
-    E --> F[🧠 Klasifikasi Kategori <br/> Local LLM Apertus-8B]
-    F --> G[(💾 Penyimpanan Lokal <br/> data/knowledge/ *.txt & index.json)]
+    E --> F[🧠 Category Classification <br/> Local LLM Apertus-8B]
+    F --> G[(💾 Local Storage <br/> data/knowledge/ *.txt & index.json)]
 
     %% Tab 2 Pipeline
-    H[📄 Unggah Template Form Kosong] --> I{⚡ Deteksi Kolom Isian}
-    I -->| fill_form stubs | J[📋 Deteksi Input Fields <br/> fillers.detect_fields]
+    H[📄 Upload Blank Form Template] --> I{⚡ Fillable Field Detection}
+    I -->| fill_form stubs | J[📋 Detect Input Fields <br/> fillers.detect_fields]
 
     G --> K[🤖 Context-Prefixed LLM Search]
     J --> K
-    K --> L[✏️ Review & Edit Kolom oleh User]
-    L --> M[🖨️ Generator Dokumen Final]
-    M --> N[(📥 File Hasil Auto-Fill <br/> data/outputs/ filled_*)]
+    K --> L[✏️ User Review & Edit Fields]
+    L --> M[🖨️ Final Document Generator]
+    M --> N[(📥 Auto-Filled Output <br/> data/outputs/ filled_*)]
 
-    %% Styling for drop-shadow / modern 3D look
-    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style B fill:#334155,stroke:#94a3b8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style C fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style D fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style E fill:#0284c7,stroke:#bae6fd,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style F fill:#6366f1,stroke:#c7d2fe,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style G fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style H fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style I fill:#334155,stroke:#94a3b8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style J fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style K fill:#6366f1,stroke:#c7d2fe,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style L fill:#0284c7,stroke:#bae6fd,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style M fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
-    style N fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff,filter:drop-shadow(2px 4px 6px #000)
+    %% Styling for modern look (shadow removed to prevent GitHub rendering issues)
+    style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style B fill:#334155,stroke:#94a3b8,stroke-width:2px,color:#fff
+    style C fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style D fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style E fill:#0284c7,stroke:#bae6fd,stroke-width:2px,color:#fff
+    style F fill:#6366f1,stroke:#c7d2fe,stroke-width:2px,color:#fff
+    style G fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff
+    style H fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style I fill:#334155,stroke:#94a3b8,stroke-width:2px,color:#fff
+    style J fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style K fill:#6366f1,stroke:#c7d2fe,stroke-width:2px,color:#fff
+    style L fill:#0284c7,stroke:#bae6fd,stroke-width:2px,color:#fff
+    style M fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    style N fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#fff
 ```
 
 ---
 
-## 📁 Struktur Direktori Proyek
+## 📁 Project Directory Structure
 
-- **`src/`**: Folder kode sumber utama.
-  - [config.py](src/config.py): Pengaturan konfigurasi proyek, membaca file lingkungan `.env` dengan fallback nilai default.
-  - [db.py](src/db.py): Manajemen database lokal (file teks di `data/knowledge/` dan `index.json`) serta pencatatan audit pipeline.
-  - [ocr.py](src/ocr.py): Wrapper framework OCR Vision & Quartz macOS via PyObjC.
-  - [llm.py](src/llm.py): Manajemen siklus hidup LLM lokal (Apertus/SEA-LION) dan embedding (BGE-M3). Mengimplementasikan `SequentialLLMContext` untuk memuat model ke RAM saat inferensi dan langsung melepaskannya setelah selesai agar menghemat konsumsi memori (target RAM 8GB).
-  - [parsers.py](src/parsers.py): Parser pembaca PDF, DOCX, XLSX, dengan fallback OCR terintegrasi untuk PDF hasil scan.
-  - [fillers.py](src/fillers.py): Logika deteksi form dan pengisian form (tahap awal menggunakan mock/stub).
-  - [app.py](src/app.py): Backend FastAPI, menangani request web routing dan integrasi HTMX.
-- **`templates/`**: File HTML template Jinja2 untuk UI antarmuka (dark theme premium).
-  - [base.html](templates/base.html): Layout utama pembungkus halaman.
-  - `tab1.html`, `tab1_full.html`: Parsial dan halaman penuh Tab 1.
-  - `tab2.html`, `tab2_full.html`: Parsial dan halaman penuh Tab 2.
-- **`static/`**: Aset UI statis.
-  - `css/styles.css`: Desain visual dark theme dengan transisi halus dan efek glassmorphism.
-  - `js/htmx.min.js`: Pustaka HTMX untuk request asinkronus (diunduh saat setup).
-- **`models/`**: Folder penyimpanan file bobot model GGUF lokal (diabaikan oleh git).
-- **`data/`**: Runtime data (diabaikan oleh git).
-  - `knowledge/`: Penyimpanan berkas `.txt` basis data dan berkas `index.json`.
-  - `temp_uploads/`: Direktori penyimpanan file sementara.
-  - `outputs/`: Direktori file output hasil pengisian formulir.
-  - [process_audit.log](data/process_audit.log): Log audit langkah demi langkah dari pipeline ingest dan fill (upload, prompt LLM mentah, respon LLM, hasil OCR mentah).
-- **`scripts/`**: Script pembantu.
-  - [download_models.py](scripts/download_models.py): Mendownload model GGUF dari Hugging Face dan pustaka HTMX untuk kebutuhan offline.
-- **`tests/`**: Unit testing Pytest.
-  - [test_db.py](tests/test_db.py): Pengujian fungsi CRUD database lokal.
-  - [test_ocr.py](tests/test_ocr.py): Pengujian modul OCR Vision macOS & penanganan fallback PDF.
-  - [test_llm.py](tests/test_llm.py): Pengujian modul inisialisasi context LLM lokal.
-
----
-
-## ⚙️ Konfigurasi & Variabel Lingkungan (`.env`)
-
-Aplikasi menggunakan berkas `.env` untuk mengatur perilaku inferensi lokal dan path model. Anda dapat menyalin konfigurasi dari [.env.example](.env.example):
-
-- **`LLM_N_CTX`** (Default: `20480`): Ukuran context window untuk LLM (token prompt + token output). Qwen2.5 mendukung hingga 32K.
-- **`LLM_MAX_TOKENS`** (Default: `4096`): Batas token output yang dihasilkan LLM dalam sekali generasi.
-- **`LLM_TEMPERATURE`** (Default: `0.1`): Kreativitas inferensi. Nilai rendah menjaga keakuratan ekstraksi data.
-- **`LLM_MODEL_FILENAME`** (Default: `apertus-sea-lion-v4-8b-it-q4_k_m.gguf`): Nama berkas LLM lokal di folder `models/`.
-- **`EMBEDDING_MODEL_FILENAME`** (Default: `bge-m3-f16.gguf`): Nama berkas embedding lokal di folder `models/`.
-- **`EMBEDDING_N_CTX`** (Default: `1024`): Context window untuk model embedding.
-- **`OCR_RECOGNITION_LEVEL`** (Default: `0`): Level akurasi OCR (0 = Accurate, 1 = Fast).
+- **`src/`**: Main source code folder.
+  - [config.py](src/config.py): Project configuration settings, reading the `.env` environment file with fallbacks.
+  - [db.py](src/db.py): Local database management (text files in `data/knowledge/` and `index.json`) and pipeline audit logging.
+  - [ocr.py](src/ocr.py): Wrapper for macOS Vision & Quartz OCR frameworks via PyObjC.
+  - [llm.py](src/llm.py): Lifecycle management of the local LLM (Apertus/SEA-LION) and embeddings (BGE-M3). Implements `SequentialLLMContext` to load the model into RAM during inference and immediately release it afterward to save memory (targeting 8GB RAM).
+  - [parsers.py](src/parsers.py): Document parsers for PDF, DOCX, and XLSX with integrated fallback OCR for scanned PDFs.
+  - [fillers.py](src/fillers.py): Form detection and form-filling logic (initial stage using mock/stub).
+  - [app.py](src/app.py): FastAPI backend, handling web routing requests and HTMX integration.
+- **`templates/`**: Jinja2 HTML templates for the user interface (premium dark theme).
+  - [base.html](templates/base.html): Main layout wrapper.
+  - `tab1.html`, `tab1_full.html`: Tab 1 partials and full page.
+  - `tab2.html`, `tab2_full.html`: Tab 2 partials and full page.
+- **`static/`**: Static UI assets.
+  - `css/styles.css`: Dark theme visual styles with smooth transitions and glassmorphism.
+  - `js/htmx.min.js`: HTMX library for asynchronous requests (downloaded during setup).
+- **`models/`**: Folder for storing local GGUF model weight files (ignored by git).
+- **`data/`**: Runtime data (ignored by git).
+  - `knowledge/`: Local `.txt` database storage and `index.json`.
+  - `temp_uploads/`: Directory for temporary files.
+  - `outputs/`: Directory for auto-filled output documents.
+  - [process_audit.log](data/process_audit.log): Step-by-step audit logs of the ingest and fill pipelines (including uploads, raw LLM prompts, LLM responses, and raw OCR output).
+- **`scripts/`**: Helper scripts.
+  - [download_models.py](scripts/download_models.py): Downloads local GGUF models from Hugging Face and the HTMX library for offline usage.
+- **`tests/`**: Pytest unit tests.
+  - [test_db.py](tests/test_db.py): Tests local database CRUD functionality.
+  - [test_ocr.py](tests/test_ocr.py): Tests macOS Vision OCR module and PDF fallback handling.
+  - [test_llm.py](tests/test_llm.py): Tests local LLM context initialization.
 
 ---
 
-## 🚀 Panduan Memulai & Menjalankan Aplikasi
+## ⚙️ Configuration & Environment Variables (`.env`)
 
-Langkah-langkah untuk menyiapkan dan menjalankan proyek di terminal lokal Anda:
+The application uses a `.env` file to configure local inference behavior and model paths. You can copy the configuration template from [.env.example](.env.example):
 
-### 1. Sinkronisasi Dependensi
+- **`LLM_N_CTX`** (Default: `20480`): The context window size for the LLM (prompt tokens + output tokens). Qwen2.5 supports up to 32K.
+- **`LLM_MAX_TOKENS`** (Default: `4096`): Output token limit generated by the LLM in a single execution.
+- **`LLM_TEMPERATURE`** (Default: `0.1`): Inference creativity. A low value maintains data extraction accuracy.
+- **`LLM_MODEL_FILENAME`** (Default: `apertus-sea-lion-v4-8b-it-q4_k_m.gguf`): Filename of the local LLM model inside the `models/` directory.
+- **`EMBEDDING_MODEL_FILENAME`** (Default: `bge-m3-f16.gguf`): Filename of the local embedding model inside the `models/` directory.
+- **`EMBEDDING_N_CTX`** (Default: `1024`): Context window size for the embedding model.
+- **`OCR_RECOGNITION_LEVEL`** (Default: `0`): OCR accuracy level (0 = Accurate, 1 = Fast).
 
-Unduh dan pasang dependensi virtual environment menggunakan `uv`:
+---
+
+## 🚀 Getting Started & Running the Application
+
+Steps to set up and run the project locally on your machine:
+
+### 1. Synchronize Dependencies
+
+Download and install virtual environment dependencies using `uv`:
 
 ```bash
 uv sync
 ```
 
-### 2. Unduh Model GGUF Lokal & Pustaka Frontend
+### 2. Download Local GGUF Models & Frontend Libraries
 
-Jalankan script downloader untuk mengambil berkas model (~6GB) dari Hugging Face dan menaruh `htmx.min.js` secara offline ke folder statis:
+Run the downloader script to fetch the model weights (~6GB) from Hugging Face and place `htmx.min.js` in the static folder for offline usage:
 
 ```bash
 uv run scripts/download_models.py
 ```
 
-### 3. Jalankan Unit Testing
+### 3. Run Unit Tests
 
-Pastikan semua integrasi sistem, database, dan binding macOS Vision framework lulus pengujian:
+Ensure all system integrations, database routines, and macOS Vision framework bindings pass verification:
 
 ```bash
 uv run pytest tests/
 ```
 
-### 4. Mulai Server FastAPI lokal
+### 4. Start Local FastAPI Server
 
-Jalankan server aplikasi web:
+Launch the web application server:
 
 ```bash
 uv run uvicorn src.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Buka browser Anda dan akses tautan: **[http://127.0.0.1:8000](http://127.0.0.1:8000)**.
+Open your browser and navigate to: **[http://127.0.0.1:8000](http://127.0.0.1:8000)**.
