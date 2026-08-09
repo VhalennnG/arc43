@@ -35,6 +35,7 @@ models/
 data/knowledge/
 data/process_audit.log
 data/temp_uploads/
+data/outputs/
 data/data/
 
 # Pytest
