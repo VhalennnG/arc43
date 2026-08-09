@@ -1,7 +1,10 @@
 import os
+import re
 import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+_VALID_RECORD_ID = re.compile(r'^[a-zA-Z0-9_\-]+$')
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -90,6 +93,8 @@ def get_record(record_id: str) -> Optional[Dict[str, Any]]:
     Reads the .txt file and parses line 1 as category, rest as raw_text.
     Also merges metadata from index.json.
     """
+    if not _VALID_RECORD_ID.match(record_id):
+        return None
     record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.txt")
     if not os.path.exists(record_path):
         return None
@@ -120,6 +125,8 @@ def delete_record(record_id: str) -> bool:
     """
     Deletes a record (.txt file) and its index entry.
     """
+    if not _VALID_RECORD_ID.match(record_id):
+        return False
     # Delete individual record file
     record_path = os.path.join(KNOWLEDGE_DIR, f"{record_id}.txt")
     deleted = False

@@ -20,6 +20,9 @@ dependencies = [
     "reportlab>=4.1.0",
     "huggingface-hub>=0.21.4",
     "python-dotenv>=1.0.0",
+    "rapidfuzz>=3.6.0",
+    "pdfplumber>=0.11.0",
+    "PyMuPDF>=1.23.0",
 ]
 
 [dependency-groups]

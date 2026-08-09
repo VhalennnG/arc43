@@ -93,13 +93,13 @@ def parse_document(file_path: str) -> Dict[str, Any]:
             "source_type": "pdf",
             "extraction_method": method
         }
-    elif ext in (".docx", ".doc"):
+    elif ext == ".docx":
         return {
             "raw_text": parse_docx(file_path),
             "source_type": "docx",
             "extraction_method": "parser"
         }
-    elif ext in (".xlsx", ".xls"):
+    elif ext == ".xlsx":
         return {
             "raw_text": parse_xlsx(file_path),
             "source_type": "xlsx",
@@ -111,5 +111,10 @@ def parse_document(file_path: str) -> Dict[str, Any]:
             "source_type": "image",
             "extraction_method": "ocr"
         }
+    elif ext in (".doc", ".xls"):
+        raise ValueError(
+            f"Legacy binary format '{ext}' is not supported. "
+            f"Please convert to {'.docx' if ext == '.doc' else '.xlsx'} first."
+        )
     else:
         raise ValueError(f"Unsupported file format: {ext}")

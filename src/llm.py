@@ -32,6 +32,39 @@ def get_embedding_model() -> Llama:
         )
     return _embedding_model
 
+# Global reference to resident LLM model (for batch processing)
+_llm_instance: Optional[Llama] = None
+
+def preload_llm(model_path: str = None, n_ctx: int = None) -> Llama:
+    """
+    Preloads and caches the LLM model globally for batch processing.
+    """
+    global _llm_instance
+    if _llm_instance is None:
+        path = model_path or config.LLM_PATH
+        ctx = n_ctx or config.LLM_N_CTX
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"LLM model GGUF not found at: {path}")
+        print(f"Preloading LLM model for batch processing: {path}...")
+        _llm_instance = Llama(
+            model_path=path,
+            n_ctx=ctx,
+            n_gpu_layers=-1,  # Use Metal acceleration on Apple Silicon macOS
+            verbose=False
+        )
+    return _llm_instance
+
+def unload_llm():
+    """
+    Unloads the globally cached LLM model to release memory.
+    """
+    global _llm_instance
+    if _llm_instance is not None:
+        print("Unloading globally cached LLM model...")
+        del _llm_instance
+        _llm_instance = None
+        gc.collect()
+
 class SequentialLLMContext:
     """
     A context manager to load the LLM model sequentially and unload it upon exit.
@@ -78,15 +111,26 @@ def generate_text(
     stop: Optional[List[str]] = None
 ) -> str:
     """
-    Loads the LLM model, performs text completion, and unloads it to release resources.
+    Generates text using the cached LLM model if preloaded,
+    otherwise loads and unloads the model on-demand.
     """
+    global _llm_instance
     if max_tokens is None:
         max_tokens = config.LLM_MAX_TOKENS
     if temperature is None:
         temperature = config.LLM_TEMPERATURE
         
-    with SequentialLLMContext() as llm:
-        res = llm.create_completion(
+    if _llm_instance is not None:
+        res = _llm_instance.create_completion(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop
+        )
+        return res["choices"][0]["text"]
+        
+    with SequentialLLMContext() as model:
+        res = model.create_completion(
             prompt=prompt,
             max_tokens=max_tokens,
             temperature=temperature,

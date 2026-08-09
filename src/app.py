@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import json
 from datetime import datetime
@@ -8,7 +9,25 @@ from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from src import db, ocr, llm, parsers, fillers
+from src import db, ocr, llm, parsers
+
+# Supported form template formats (legacy binary formats not supported)
+SUPPORTED_FORM_EXTENSIONS = {".docx", ".pdf", ".xlsx"}
+SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".png", ".jpg", ".jpeg", ".bmp", ".tiff"}
+
+def sanitize_filename(raw_name: str, base_dir: str) -> str:
+    """
+    Strips path separators from a client-supplied filename and verifies
+    the resulting path stays inside base_dir.  Raises HTTPException on violation.
+    """
+    safe_name = os.path.basename(raw_name)
+    if not safe_name or safe_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    full_path = os.path.join(base_dir, safe_name)
+    # Resolve symlinks / .. to catch any remaining tricks
+    if os.path.commonpath([os.path.abspath(full_path), os.path.abspath(base_dir)]) != os.path.abspath(base_dir):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return safe_name
 
 # Initialize database
 db.init_db()
@@ -57,15 +76,19 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
     temp_dir = os.path.join(db.DATA_DIR, "temp_uploads")
     os.makedirs(temp_dir, exist_ok=True)
     
-    file_path = os.path.join(temp_dir, file.filename)
+    safe_name = sanitize_filename(file.filename, temp_dir)
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {ext}. Legacy .doc/.xls formats are not supported; please convert to .docx/.xlsx first.")
+    file_path = os.path.join(temp_dir, safe_name)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    db.log_process(file.filename, "FILE_UPLOADED", {"temp_path": file_path})
+    db.log_process(safe_name, "FILE_UPLOADED", {"temp_path": file_path})
         
     try:
         # Determine extraction method
-        ext = os.path.splitext(file.filename)[1].lower()
+        ext = os.path.splitext(safe_name)[1].lower()
         if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
             # Run local macOS Vision OCR
             raw_text = ocr.recognize_text(file_path)
@@ -162,16 +185,32 @@ async def process_form(
     temp_dir = os.path.join(db.DATA_DIR, "temp_uploads")
     os.makedirs(temp_dir, exist_ok=True)
     
+    safe_form_name = sanitize_filename(form_file.filename, temp_dir)
+    ext = os.path.splitext(safe_form_name)[1].lower()
+    if ext not in SUPPORTED_FORM_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported form format: {ext}. Legacy .doc/.xls formats are not supported; please convert to .docx/.xlsx first.")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    target_filename = f"target_{timestamp}_{form_file.filename}"
+    target_filename = f"target_{timestamp}_{safe_form_name}"
     file_path = os.path.join(temp_dir, target_filename)
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(form_file.file, buffer)
         
     try:
-        # Detect fields in target form template
-        detected = fillers.detect_fields(file_path)
+        # ext already validated above
+        if ext == ".docx":
+            from src.analyzers.docx_analyzer import DocxAnalyzer
+            analyzer = DocxAnalyzer()
+        elif ext == ".pdf":
+            from src.analyzers.pdf_analyzer import PDFAnalyzer
+            analyzer = PDFAnalyzer()
+        elif ext == ".xlsx":
+            from src.analyzers.xlsx_analyzer import XlsxAnalyzer
+            analyzer = XlsxAnalyzer()
+        else:
+            raise ValueError(f"Unsupported form format: {ext}")
+            
+        fields = analyzer.analyze(file_path)
         
         # Load selected source records
         records = []
@@ -183,44 +222,18 @@ async def process_form(
         # Sort by uploaded_at ascending so later files override earlier ones (chronological resolution)
         records.sort(key=lambda r: r.get("uploaded_at", ""))
         
+        # Resolve all fields using router
+        from src.resolvers.router import resolve_all_fields
+        from src.knowledge.store import load_profile
+        
+        resolve_all_fields(fields, profile=load_profile(), raw_docs=records)
+        
         fields_with_values = []
-        for field in detected:
-            field_id = field["id"]
-            field_label = field["label"]
-            matched_value = ""
-            
-            # Match field value using LLM with category-prefixed source context
-            if os.path.exists(llm.LLM_PATH):
-                context_texts = []
-                for rec in records:
-                    category_line = rec.get("category", "")
-                    raw = rec.get("raw_text", "")
-                    header = f"[{category_line}] " if category_line else ""
-                    context_texts.append(f"{header}Source: {rec.get('original_filename', '')}\n{raw}")
-                context_str = "\n\n".join(context_texts)
-                
-                if context_str.strip():
-                    prompt = (
-                        "You are an AI assistant helping to auto-fill form fields.\n"
-                        f"Based ONLY on the context documents below, retrieve the value for the form field: '{field_label}'.\n"
-                        "Rules:\n"
-                        "- Extract the exact value verbatim. Do not summarize, do not guess, do not add filler words.\n"
-                        "- If the value is not explicitly present in the context, output only the word: EMPTY\n"
-                        "- Do not output any explanation, markdown, or intros.\n\n"
-                        f"Context Documents:\n---\n{context_str}\n---\n\n"
-                        f"Value for '{field_label}':"
-                    )
-                    try:
-                        llm_val = llm.generate_text(prompt, max_tokens=128).strip()
-                        if llm_val.upper() != "EMPTY":
-                            matched_value = llm_val
-                    except Exception as e:
-                        print(f"Error matching field '{field_label}' with LLM: {e}")
-                        
+        for f in fields:
             fields_with_values.append({
-                "id": field_id,
-                "label": field_label,
-                "value": matched_value
+                "id": f.id,
+                "label": f.label,
+                "value": f.answer or ""
             })
             
         all_records = db.list_records()
@@ -244,7 +257,8 @@ async def generate_output(
 ):
     """Write user-reviewed field values back to form template copy."""
     temp_dir = os.path.join(db.DATA_DIR, "temp_uploads")
-    form_path = os.path.join(temp_dir, form_filename)
+    safe_form_filename = sanitize_filename(form_filename, temp_dir)
+    form_path = os.path.join(temp_dir, safe_form_filename)
     
     if not os.path.exists(form_path):
         raise HTTPException(status_code=400, detail="Form template session expired.")
@@ -265,7 +279,42 @@ async def generate_output(
     output_path = os.path.join(output_dir, output_filename)
     
     try:
-        fillers.fill_form(form_path, fields_to_fill, output_path)
+        ext = os.path.splitext(form_filename)[1].lower()
+        
+        # 1. Analyze template first to locate elements
+        if ext == ".docx":
+            from src.analyzers.docx_analyzer import DocxAnalyzer
+            from src.writers.docx_writer import DocxWriter
+            analyzer = DocxAnalyzer()
+            writer = DocxWriter()
+        elif ext == ".pdf":
+            from src.analyzers.pdf_analyzer import PDFAnalyzer
+            analyzer = PDFAnalyzer()
+            form_type = analyzer.detect_form_type(form_path)
+            if form_type == "acroform":
+                from src.writers.pdf_acroform_writer import PDFAcroFormWriter
+                writer = PDFAcroFormWriter()
+            else:
+                from src.writers.pdf_overlay_writer import PDFOverlayWriter
+                writer = PDFOverlayWriter()
+        elif ext == ".xlsx":
+            from src.analyzers.xlsx_analyzer import XlsxAnalyzer
+            from src.writers.xlsx_writer import XlsxWriter
+            analyzer = XlsxAnalyzer()
+            writer = XlsxWriter()
+        else:
+            raise ValueError(f"Unsupported form format: {ext}")
+            
+        fields = analyzer.analyze(form_path)
+        
+        # Map user edits back to FormField objects
+        for f in fields:
+            if f.id in fields_to_fill:
+                f.answer = fields_to_fill[f.id]
+                
+        # 2. Mutate template in-place and save to output_path
+        writer.fill(form_path, fields, output_path)
+        
     finally:
         if os.path.exists(form_path):
             os.remove(form_path)
