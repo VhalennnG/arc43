@@ -1,6 +1,6 @@
-# arc43 — AI-Powered Form Auto-Fill
+# Arc43 — AI-Powered Form Auto-Fill
 
-Project **arc43** is a local macOS desktop-based web application that detects fillable fields on a target template form and automatically fills them using data from the user's document Knowledge Base. The entire process of file processing, OCR, text extraction, classification, and LLM inference is performed **100% locally (on-device)** without sending any data to third-party cloud services or the internet.
+Project **Arc43** is a local macOS desktop-based web application that detects fillable fields on a target template form and automatically fills them using data from the user's document Knowledge Base. The entire process of file processing, OCR, text extraction, classification, and LLM inference is performed **100% locally (on-device)** without sending any data to third-party cloud services or the internet.
 
 ---
 
