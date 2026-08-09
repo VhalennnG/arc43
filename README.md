@@ -1,54 +1,53 @@
-# Arc43 — AI-Powered Form Auto-Fill
+# arc43 — AI-Powered Form Auto-Fill
 
-Project **Arc43** is a local macOS desktop-based web application that detects fillable fields on a target template form and automatically fills them using data from the user's document Knowledge Base. The entire process of file processing, OCR, text extraction, classification, and LLM inference is performed **100% locally (on-device)** without sending any data to third-party cloud services or the internet.
+**arc43** is a local, privacy-first macOS application designed to automatically fill out target forms using information from your own personal documents (such as resumes, ID cards, tax forms, or spreadsheets). 
 
----
-
-## 🏗️ System Architecture & Workflow
-
-The application is split into two main user interface tabs (Tab 1 and Tab 2):
-
-### 1. Tab 1: Knowledge Base (Ingest Pipeline)
-
-When a user uploads a source document (Resume, ID card, tax document, etc.) as an information source:
-
-1. **Temporary Upload**: The file is saved in `data/temp_uploads/`.
-2. **Raw Text Extraction**:
-   - **Image Files (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`)**: Processed using the native **macOS Vision Framework** (`ocr.recognize_text`) via the PyObjC API with high accuracy (`recognitionLevel = 0` / Accurate).
-   - **PDF Files (`.pdf`)**: Digital text is extracted using the `pypdf` parser. If the digital reading returns empty text `""` (indicating a scanned document or image PDF), the system triggers the **native fallback OCR** (`ocr.recognize_pdf_text_via_ocr`) which renders PDF pages in-memory using `Quartz.PDFDocument` to `NSImage` format and performs OCR using the Vision API.
-   - **Word Files (`.docx`)**: Paragraph and table text is programmatically extracted using `python-docx` (with automatic deduplication for merged cells).
-   - **Excel Files (`.xlsx`)**: Data rows and cell values are programmatically extracted from each worksheet using `openpyxl` (`data_only=True`).
-3. **Category Classification by LLM**:
-   The extracted raw text is sent to the local LLM (**Apertus-SEA-LION-v4-8B-IT** based on Qwen2.5) with a prompt to generate a **single-sentence description of the document category/type** (e.g., _"Personal data containing ID Card (Kartu Tanda Penduduk)"_).
-4. **Permanent Storage**:
-   - Data is stored as a plain text file `.txt` in `data/knowledge/` formatted as: Line 1 contains the category, Line 2 is empty, and Line 3+ contains the original raw text.
-   - Document metadata (unique ID with timestamp, original filename, upload date, source type, extraction method, and category) is written to [data/knowledge/index.json](data/knowledge/index.json) for UI listing.
-   - The temporary file in `data/temp_uploads/` is deleted.
-
-### 2. Tab 2: Fill Form (Auto-Fill Pipeline)
-
-The automated form-filling pipeline consists of the following steps:
-
-1. **Source Selection**: The user selects one or more documents from the Knowledge Base to be used as the context source.
-2. **Target Form Upload**: The user uploads the blank form template they want to fill. The file is temporarily saved in `data/temp_uploads/`.
-3. **Field Detection**:
-   - Form fields are detected using the `fillers.detect_fields()` module. _(Note: In this baseline phase, field detection is a **mock implementation** returning three sample fields: Full Name, National ID Number (NIK), and Address)_.
-4. **Contextual LLM Match**:
-   - The program combines the raw text of all selected source documents, prefixing each with its document category/type as a context clue for the LLM.
-   - For each detected field, the system sends a prompt to the local LLM to extract the field value verbatim from the source documents. If the data is not found, the LLM is directed to return `EMPTY`.
-   - The LLM outputs are displayed in a UI table so that the user can manually review and edit them if needed.
-5. **Form Writing (Form Filling & Output)**:
-   - After review, the form values are sent to `fillers.fill_form()`. _(Note: In this baseline phase, form writing still outputs a simple mock text file containing key-value pairs)_.
-   - The filled file is saved as `data/outputs/filled_<filename>` and the temporary file in `data/temp_uploads/` is deleted.
-   - The user can download the final output file through the UI.
+All file processing, text extraction, optical character recognition (OCR), and artificial intelligence (AI) inference are performed **100% locally on your device**. None of your personal data is ever uploaded to the cloud or sent to third-party services.
 
 ---
 
-## 📊 Processing Flow Diagrams
+## 🌟 Key Features
 
-### 1. Sequence Diagram (Ingestion Flow - Tab 1)
+*   **100% On-Device Privacy**: Your documents and personal data stay secure on your local machine.
+*   **Multi-Format Ingestion**: Supports extracting text from PDFs, images (PNG, JPG, etc.), Word documents (DOCX), and Excel spreadsheets (XLSX).
+*   **Smart Fallback OCR**: Automatically triggers macOS-native Apple Vision OCR for scanned PDFs and image files.
+*   **Automated Form Matching**: Uses a local AI model to extract required form values verbatim from your personal files.
+*   **Interactive Review**: Displays extracted answers in a clean table, allowing you to edit and verify before generating the final form.
 
-The diagram below illustrates the asynchronous communication and back-and-forth data exchange between system components when a user uploads a new document:
+---
+
+## 💻 User Guide (How to Use)
+
+The application features a clean, responsive web interface divided into two main tabs:
+
+### Tab 1: Knowledge Base (Your Information Sources)
+
+This tab is where you manage the documents that contain your personal information.
+
+1. **Upload Source Documents**: Click the upload area to select documents such as your resume, ID documents, or transcript.
+2. **Automatic Text Extraction**: The app parses the document text. If the document is an image or scan, macOS Vision OCR extracts the text.
+3. **AI Classification**: A local AI model classifies the document (e.g., *"Personal information containing Resume"*).
+4. **View Documents**: Your document list is saved locally and can be viewed or selected for form-filling.
+
+### Tab 2: Auto-Fill Form (Filling Your Templates)
+
+This tab handles the automated form-filling pipeline.
+
+1. **Select Sources**: Check the boxes of the documents in your Knowledge Base that you want to use as references.
+2. **Upload a Blank Form**: Upload the target empty form template you want to fill out.
+3. **Match Fields**: The system scans the form, extracts the required field names, and queries the local AI to search your reference documents for matching answers.
+4. **Review & Edit**: Review the AI-generated answers in the interactive table. You can manually edit any values if needed.
+5. **Download the Filled Form**: Click "Submit" to write the values into the form. You can then download your completed document immediately.
+
+---
+
+## 📊 Application Workflows
+
+Here is how data flows through the application during key operations:
+
+### 1. Document Ingestion Flow (Tab 1)
+
+This diagram shows how your uploaded source documents are parsed, processed by local AI, and saved to your secure offline database:
 
 ```mermaid
 sequenceDiagram
@@ -93,11 +92,9 @@ sequenceDiagram
     UI->>User: Update Document List UI
 ```
 
----
+### 2. Auto-Fill Pipeline Flow (Tab 2)
 
-### 2. Block Flow Diagram (Top-to-Bottom Flowchart — Auto-Fill Pipeline)
-
-The diagram below shows the top-to-bottom data flow for the end-to-end processing:
+This flowchart illustrates the step-by-step process of parsing templates, matching fields via local AI context, and generating the final output:
 
 ```mermaid
 flowchart TD
@@ -124,7 +121,7 @@ flowchart TD
     L --> M[🖨️ Final Document Generator]
     M --> N[(📥 Auto-Filled Output <br/> data/outputs/ filled_*)]
 
-    %% Styling for modern look (shadow removed to prevent GitHub rendering issues)
+    %% Styling
     style A fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#fff
     style B fill:#334155,stroke:#94a3b8,stroke-width:2px,color:#fff
     style C fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff
@@ -143,86 +140,8 @@ flowchart TD
 
 ---
 
-## 📁 Project Directory Structure
+## 🛠️ Developer Setup & Technical details
 
-- **`src/`**: Main source code folder.
-  - [config.py](src/config.py): Project configuration settings, reading the `.env` environment file with fallbacks.
-  - [db.py](src/db.py): Local database management (text files in `data/knowledge/` and `index.json`) and pipeline audit logging.
-  - [ocr.py](src/ocr.py): Wrapper for macOS Vision & Quartz OCR frameworks via PyObjC.
-  - [llm.py](src/llm.py): Lifecycle management of the local LLM (Apertus/SEA-LION) and embeddings (BGE-M3). Implements `SequentialLLMContext` to load the model into RAM during inference and immediately release it afterward to save memory (targeting 8GB RAM).
-  - [parsers.py](src/parsers.py): Document parsers for PDF, DOCX, and XLSX with integrated fallback OCR for scanned PDFs.
-  - [fillers.py](src/fillers.py): Form detection and form-filling logic (initial stage using mock/stub).
-  - [app.py](src/app.py): FastAPI backend, handling web routing requests and HTMX integration.
-- **`templates/`**: Jinja2 HTML templates for the user interface (premium dark theme).
-  - [base.html](templates/base.html): Main layout wrapper.
-  - `tab1.html`, `tab1_full.html`: Tab 1 partials and full page.
-  - `tab2.html`, `tab2_full.html`: Tab 2 partials and full page.
-- **`static/`**: Static UI assets.
-  - `css/styles.css`: Dark theme visual styles with smooth transitions and glassmorphism.
-  - `js/htmx.min.js`: HTMX library for asynchronous requests (downloaded during setup).
-- **`models/`**: Folder for storing local GGUF model weight files (ignored by git).
-- **`data/`**: Runtime data (ignored by git).
-  - `knowledge/`: Local `.txt` database storage and `index.json`.
-  - `temp_uploads/`: Directory for temporary files.
-  - `outputs/`: Directory for auto-filled output documents.
-  - [process_audit.log](data/process_audit.log): Step-by-step audit logs of the ingest and fill pipelines (including uploads, raw LLM prompts, LLM responses, and raw OCR output).
-- **`scripts/`**: Helper scripts.
-  - [download_models.py](scripts/download_models.py): Downloads local GGUF models from Hugging Face and the HTMX library for offline usage.
-- **`tests/`**: Pytest unit tests.
-  - [test_db.py](tests/test_db.py): Tests local database CRUD functionality.
-  - [test_ocr.py](tests/test_ocr.py): Tests macOS Vision OCR module and PDF fallback handling.
-  - [test_llm.py](tests/test_llm.py): Tests local LLM context initialization.
+If you are a developer, want to configure advanced environment settings (`.env`), inspect the code directory structure, or run the local test suites, please refer to the detailed technical documentation:
 
----
-
-## ⚙️ Configuration & Environment Variables (`.env`)
-
-The application uses a `.env` file to configure local inference behavior and model paths. You can copy the configuration template from [.env.example](.env.example):
-
-- **`LLM_N_CTX`** (Default: `20480`): The context window size for the LLM (prompt tokens + output tokens). Qwen2.5 supports up to 32K.
-- **`LLM_MAX_TOKENS`** (Default: `4096`): Output token limit generated by the LLM in a single execution.
-- **`LLM_TEMPERATURE`** (Default: `0.1`): Inference creativity. A low value maintains data extraction accuracy.
-- **`LLM_MODEL_FILENAME`** (Default: `apertus-sea-lion-v4-8b-it-q4_k_m.gguf`): Filename of the local LLM model inside the `models/` directory.
-- **`EMBEDDING_MODEL_FILENAME`** (Default: `bge-m3-f16.gguf`): Filename of the local embedding model inside the `models/` directory.
-- **`EMBEDDING_N_CTX`** (Default: `1024`): Context window size for the embedding model.
-- **`OCR_RECOGNITION_LEVEL`** (Default: `0`): OCR accuracy level (0 = Accurate, 1 = Fast).
-
----
-
-## 🚀 Getting Started & Running the Application
-
-Steps to set up and run the project locally on your machine:
-
-### 1. Synchronize Dependencies
-
-Download and install virtual environment dependencies using `uv`:
-
-```bash
-uv sync
-```
-
-### 2. Download Local GGUF Models & Frontend Libraries
-
-Run the downloader script to fetch the model weights (~6GB) from Hugging Face and place `htmx.min.js` in the static folder for offline usage:
-
-```bash
-uv run scripts/download_models.py
-```
-
-### 3. Run Unit Tests
-
-Ensure all system integrations, database routines, and macOS Vision framework bindings pass verification:
-
-```bash
-uv run pytest tests/
-```
-
-### 4. Start Local FastAPI Server
-
-Launch the web application server:
-
-```bash
-uv run uvicorn src.app:app --reload --host 127.0.0.1 --port 8000
-```
-
-Open your browser and navigate to: **[http://127.0.0.1:8000](http://127.0.0.1:8000)**.
+👉 **[System Architecture & Developer Guide (ARCHITECTURE.md)](ARCHITECTURE.md)**
