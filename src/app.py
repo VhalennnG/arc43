@@ -45,14 +45,20 @@ os.makedirs(os.path.join(STATIC_DIR, "js"), exist_ok=True)
 # Mount static folder
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# Mount assets folder
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+os.makedirs(ASSETS_DIR, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
 # Templates
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-@app.get("/")
-async def root():
-    """Redirect to Tab 1 by default."""
-    return RedirectResponse(url="/tab1")
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    """Render the side-by-side main Dashboard."""
+    records = db.list_records()
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={"records": records})
 
 @app.get("/tab1", response_class=HTMLResponse)
 async def tab1(request: Request):
@@ -60,7 +66,7 @@ async def tab1(request: Request):
     records = db.list_records()
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request=request, name="tab1.html", context={"records": records})
-    return templates.TemplateResponse(request=request, name="tab1_full.html", context={"records": records, "active_tab": "tab1"})
+    return RedirectResponse(url="/")
 
 @app.get("/tab2", response_class=HTMLResponse)
 async def tab2(request: Request):
@@ -68,7 +74,7 @@ async def tab2(request: Request):
     records = db.list_records()
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request=request, name="tab2.html", context={"records": records})
-    return templates.TemplateResponse(request=request, name="tab2_full.html", context={"records": records, "active_tab": "tab2"})
+    return RedirectResponse(url="/")
 
 @app.post("/upload-doc")
 async def upload_doc(request: Request, file: UploadFile = File(...)):
@@ -166,14 +172,18 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
             os.remove(file_path)
             
     records = db.list_records()
-    return templates.TemplateResponse(request=request, name="tab1.html", context={"records": records})
+    response = templates.TemplateResponse(request=request, name="tab1.html", context={"records": records})
+    response.headers["HX-Trigger"] = "recordsChanged"
+    return response
 
 @app.delete("/delete-doc/{record_id}")
 async def delete_doc(request: Request, record_id: str):
     """Delete a document from Knowledge Base."""
     db.delete_record(record_id)
     records = db.list_records()
-    return templates.TemplateResponse(request=request, name="tab1.html", context={"records": records})
+    response = templates.TemplateResponse(request=request, name="tab1.html", context={"records": records})
+    response.headers["HX-Trigger"] = "recordsChanged"
+    return response
 
 @app.post("/process-form")
 async def process_form(

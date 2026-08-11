@@ -1,62 +1,111 @@
 <div id="tab1-view">
-    <div class="panel">
-        <h2>Upload Dokumen Sumber</h2>
-        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: -0.5rem; margin-bottom: 1.5rem;">
-            Unggah dokumen pribadi atau perusahaan (KTP, KK, NPWP, atau berkas scan). Berkas akan diekstrak 100% locally dan disimpan sebagai raw text & structured fields.
-        </p>
+  <div class="panel">
+    <h2>Upload Source Documents</h2>
+    <p
+      style="
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-top: -0.5rem;
+        margin-bottom: 1.5rem;
+      "
+    >
+      Upload documents that will be used as reference to answer forms
+    </p>
 
-        <!-- Upload form using HTMX -->
-        <form id="upload-form" hx-encoding="multipart/form-data" hx-post="/upload-doc" 
-              hx-target="#tab1-view" hx-swap="outerHTML" hx-indicator="#loading-indicator">
-            <div class="upload-zone" onclick="document.getElementById('file-input').click()">
-                <div class="upload-icon">📁</div>
-                <div class="upload-text">Klik untuk memilih file atau seret file Anda ke sini</div>
-                <div class="upload-meta">PDF, DOCX, XLSX, PNG, JPG, JPEG (Maks. 10MB)</div>
-                <input id="file-input" type="file" name="file" style="display: none;" 
-                       onchange="document.getElementById('upload-submit').click()">
-            </div>
-            <button id="upload-submit" type="submit" style="display: none;"></button>
-        </form>
-    </div>
-
-    <div class="panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <h2 style="margin: 0;">Dokumen Anda ({{ records|length }})</h2>
-            <div id="loading-indicator" class="htmx-indicator" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;">
-                ⏳ Memproses dokumen local OCR/AI...
-            </div>
+    <!-- Upload form using HTMX -->
+    <form
+      id="upload-form"
+      hx-encoding="multipart/form-data"
+      hx-post="/upload-doc"
+      hx-target="#tab1-view"
+      hx-swap="outerHTML"
+      hx-indicator="#global-loader"
+    >
+      <div
+        class="upload-zone"
+        onclick="document.getElementById('file-input').click()"
+      >
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">
+          Click to select a file or drag your file here
         </div>
+        <div class="upload-meta">
+          PDF, DOCX, XLSX, PNG, JPG, JPEG (Max. 10MB)
+        </div>
+        <input
+          id="file-input"
+          type="file"
+          name="file"
+          style="display: none"
+          onchange="document.getElementById('upload-submit').click()"
+        />
+      </div>
+      <button id="upload-submit" type="submit" style="display: none"></button>
+    </form>
+  </div>
 
-        {% if records|length == 0 %}
-            <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: var(--radius-md);">
-                <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem;">📭</span>
-                Belum ada dokumen di Knowledge Base. Silakan unggah dokumen di atas.
-            </div>
-        {% else %}
-            <div class="file-list">
-                {% for rec in records %}
-                    <div class="file-item">
-                        <div class="file-info">
-                            <span style="font-size: 1.5rem;">
-                                {% if rec.source_type == 'image' %}🖼️{% else %}📄{% endif %}
-                            </span>
-                            <div>
-                                <div class="file-name">{{ rec.original_filename }}</div>
-                                <div class="file-meta">
-                                    Format: {{ rec.source_type|upper }} &bull; Diunggah: {{ rec.uploaded_at[:16].replace('T', ' ') }}
-                                </div>
-                            </div>
-                        </div>
-                        <button class="btn btn-danger" 
-                                hx-delete="/delete-doc/{{ rec.id }}" 
-                                hx-target="#tab1-view"
-                                hx-confirm="Apakah Anda yakin ingin menghapus dokumen ini dari perangkat Anda?" 
-                                hx-swap="outerHTML">
-                            Hapus
-                        </button>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
+  <div class="panel">
+    <div
+      style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      "
+    >
+      <h2 style="margin: 0">Your Documents ({{ records|length }})</h2>
+      <div
+        id="loading-indicator"
+        class="htmx-indicator"
+        style="font-size: 0.9rem; color: var(--accent); font-weight: 600"
+      >
+        ⏳ Processing document...
+      </div>
     </div>
+
+    {% if records|length == 0 %}
+    <div
+      style="
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--text-muted);
+        border: 1px dashed var(--border-color);
+        border-radius: var(--radius-md);
+      "
+    >
+      <span style="font-size: 2rem; display: block; margin-bottom: 0.5rem"
+        >📭</span
+      >
+      No documents in the Knowledge Base yet. Please upload a document above.
+    </div>
+    {% else %}
+    <div class="file-list">
+      {% for rec in records %}
+      <div class="file-item">
+        <div class="file-info">
+          <span style="font-size: 1.5rem">
+            {% if rec.source_type == 'image' %}🖼️{% else %}📄{% endif %}
+          </span>
+          <div>
+            <div class="file-name">{{ rec.original_filename }}</div>
+            <div class="file-meta">
+              Format: {{ rec.source_type|upper }} &bull; Uploaded: {{
+              rec.uploaded_at[:16].replace('T', ' ') }}
+            </div>
+          </div>
+        </div>
+        <button
+          class="btn btn-danger"
+          hx-delete="/delete-doc/{{ rec.id }}"
+          hx-target="#tab1-view"
+          hx-confirm="Are you sure you want to delete this document from your device?"
+          hx-swap="outerHTML"
+        >
+          Delete
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
 </div>

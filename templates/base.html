@@ -1,52 +1,36 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}arc43 — Auto-Fill Form{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}Arc43{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="/assets/arc.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/styles.css" />
     <script src="/static/js/htmx.min.js"></script>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>arc43</h1>
-            <p class="subtitle">AI-Powered Form Auto-Fill — 100% On-Device & Private</p>
-        </header>
-
-        <div class="tabs">
-            <button class="tab-btn {% if active_tab == 'tab1' %}active{% endif %}"
-                    hx-get="/tab1" hx-target="#main-content" hx-push-url="true" hx-swap="innerHTML">
-                Tab 1 — Informasi Anda (Knowledge Base)
-            </button>
-            <button class="tab-btn {% if active_tab == 'tab2' %}active{% endif %}"
-                    hx-get="/tab2" hx-target="#main-content" hx-push-url="true" hx-swap="innerHTML">
-                Tab 2 — Isi Form
-            </button>
-        </div>
-
-        <main id="main-content">
-            {% block content %}{% endblock %}
-        </main>
+  </head>
+  <body>
+    <div id="global-loader" class="global-loader">
+      <div class="loader-content">
+        <div class="spinner"></div>
+        <p class="loader-text">Processing Request</p>
+        <p class="loader-subtext">Please wait, local AI models are running...</p>
+      </div>
     </div>
+    <div class="container">
+      <header>
+        <div class="brand">
+          <img src="/assets/arc.png" alt="Arc43 Logo" class="brand-logo" />
+          <h1>Arc43</h1>
+        </div>
+      </header>
 
-    <script>
-        // Track the active state of tab buttons locally when tabs are changed
-        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
-            if (evt.detail.target.id === 'main-content') {
-                const buttons = document.querySelectorAll('.tab-btn');
-                const path = window.location.pathname;
-                
-                buttons.forEach(btn => {
-                    btn.classList.remove('active');
-                    if (path === '/tab1' || path === '/' && btn.innerText.includes('Informasi')) {
-                        if (btn.innerText.includes('Informasi')) btn.classList.add('active');
-                    } else if (path === '/tab2' && btn.innerText.includes('Isi Form')) {
-                        btn.classList.add('active');
-                    }
-                });
-            }
-        });
-    </script>
-</body>
+      <main id="main-content">{% block content %}{% endblock %}</main>
+    </div>
+  </body>
 </html>

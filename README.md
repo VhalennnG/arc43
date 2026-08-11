@@ -1,8 +1,46 @@
-# arc43 — AI-Powered Form Auto-Fill
+# Arc43
 
-**arc43** is a local, privacy-first macOS application designed to automatically fill out target forms using information from your own personal documents (such as resumes, ID cards, tax forms, or spreadsheets).
+**Arc43** is a local, privacy-first macOS application designed to automatically fill out target forms using information from your own personal documents (such as resumes, ID cards, tax forms, or spreadsheets).
 
-All file processing, text extraction, optical character recognition (OCR), and artificial intelligence (AI) inference are performed **100% locally on your device**. None of your personal data is ever uploaded to the cloud or sent to third-party services.
+## All file processing, text extraction, optical character recognition (OCR), and artificial intelligence (AI) inference are performed **100% locally on your device**. None of your personal data is ever uploaded to the cloud or sent to third-party services.
+
+## 🚀 Getting Started & Running the Application
+
+Steps to set up and run the project locally on your machine:
+
+### 1. Synchronize Dependencies
+
+Download and install virtual environment dependencies using `uv`:
+
+```bash
+uv sync
+```
+
+### 2. Download Local GGUF Models & Frontend Libraries
+
+Run the downloader script to fetch the model weights (~6GB) from Hugging Face and place `htmx.min.js` in the static folder for offline usage:
+
+```bash
+uv run scripts/download_models.py
+```
+
+### 3. Run Unit Tests
+
+Ensure all system integrations, database routines, and macOS Vision framework bindings pass verification:
+
+```bash
+uv run pytest tests/
+```
+
+### 4. Start Local FastAPI Server
+
+Launch the web application server:
+
+```bash
+uv run uvicorn src.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Open your browser and navigate to: **[http://127.0.0.1:8000](http://127.0.0.1:8000)**.
 
 ---
 
